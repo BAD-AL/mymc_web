@@ -231,7 +231,20 @@ void triggerImportSave() {
 void openSlot(int n) {
   final card = (n == 1 ? state.slot1 : state.slot2);
   if (card == null) {
-    html.document.getElementById('file-input-$n')?.click();
+    showModal(
+      title: 'Load Card into Slot $n',
+      body: 'How would you like to load a memory card?',
+      buttons: [
+        ModalButton('Load from Computer', () {
+          closeModal();
+          html.document.getElementById('file-input-$n')?.click();
+        }),
+        ModalButton('Load from Server', () {
+          openHostedMenu(n);
+        }),
+        ModalButton('Cancel', closeModal, isCancel: true),
+      ],
+    );
     return;
   }
   
@@ -829,10 +842,83 @@ void openHelp() {
 }
 
 final helpContent = [
-  ('General Usage', 'Welcome to PS2 Card Manager. Drag and drop your .ps2 card files or .max/.psu save files onto a slot to begin.'),
+  ('General Usage', 'Welcome to PS2 Card Manager. Click on a slot to load a card from your computer or from our server library. You can also drag and drop .ps2 files directly onto a slot.'),
   ('Navigation', 'Use Arrow Keys to move selection, Enter to select, and Esc/Backspace to go back.'),
-  ('Copying', 'Load cards into both slots to enable copying saves between them.'),
+  ('Copying', 'Load cards into both slots to enable copying saves between them. You can also drop .max/.psu save files directly into a card view.'),
 ];
+
+class HostedCard {
+  final String label;
+  final int sizeMb;
+  final String url;
+  const HostedCard(this.label, this.sizeMb, this.url);
+}
+
+final hostedCards = [
+  HostedCard('Sample Saves', 8, 'hosted/sample.zip'),
+];
+
+void openHostedMenu(int slotIndex) {
+  showModal(
+    title: 'Hosted Save Packs',
+    body: 'Select a save pack to load into Slot $slotIndex:',
+    buttons: null,
+  );
+  
+  final body = html.document.getElementById('modal-body')!;
+  final listHtml = hostedCards.map((card) => 
+    '<div class="modal-btn hosted-item" style="text-align:center; margin-bottom:5px; cursor:pointer;" data-url="${card.url}" data-size="${card.sizeMb}" data-label="${card.label}">${card.label} (${card.sizeMb}MB)</div>'
+  ).join('');
+  
+  body.setInnerHtml('<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  
+  // Add listeners to the dynamic buttons
+  html.document.querySelectorAll('.hosted-item').forEach((el) {
+    el.onClick.listen((_) {
+      final label = el.getAttribute('data-label')!;
+      final size = int.parse(el.getAttribute('data-size')!);
+      final url = el.getAttribute('data-url')!;
+      loadHostedCard(slotIndex, HostedCard(label, size, url));
+    });
+  });
+
+  setFocusScope('.modal-btn, .nav-hint');
+}
+
+Future<void> loadHostedCard(int slotIndex, HostedCard info) async {
+  showToast('Fetching ${info.label}...', title: 'Loading');
+  try {
+    // 1. Format new card
+    final card = Ps2Card.format(sizeMb: info.sizeMb);
+    
+    // 2. Fetch Zip bytes
+    final response = await html.HttpRequest.request(info.url, responseType: 'arraybuffer');
+    final bytes = (response.response as ByteBuffer).asUint8List();
+    
+    // 3. Import ZIP into card
+    card.importSave(bytes, overwrite: true);
+    
+    // 4. Update State
+    if (slotIndex == 1) {
+      state.slot1 = card;
+      state.slot1Name = info.label + ".ps2";
+    } else {
+      state.slot2 = card;
+      state.slot2Name = info.label + ".ps2";
+    }
+    
+    updateSlotInfo(slotIndex);
+    updateSlotIcons();
+    closeModal();
+    showToast('Loaded ${info.label}', title: 'Success');
+    
+    // Open the slot to show contents
+    Timer(const Duration(milliseconds: 500), () => openSlot(slotIndex));
+    
+  } catch (e) {
+    showToast('Failed to load hosted card: $e', title: 'Error');
+  }
+}
 
 final otherLinks = [
   //('Google', 'https://google.com'),
