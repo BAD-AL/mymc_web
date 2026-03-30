@@ -13,7 +13,7 @@ class AppState {
   String? slot2Name;
   int currentSlotIndex = 1; // 1 or 2
   String currentTheme = 'classic';
-  bool animationPaused = false;
+  bool animationPaused = true;
   int helpPage = 0;
   
   // Navigation State
@@ -35,7 +35,7 @@ void main() {
   updateClock();
   Timer.periodic(const Duration(seconds: 1), (_) => updateClock());
   
-  setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, .performance-toggle, .help-btn');
+  setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-1');
   
   html.window.onKeyDown.listen(handleKeyDown);
   setupGamepadPolling();
@@ -60,10 +60,10 @@ void initUI() {
 
   html.document.getElementById('browser-back-btn')?.onClick.listen((_) => showScreen('slot-select'));
   html.document.getElementById('help-trigger')?.onClick.listen((_) => openHelp());
+  html.document.getElementById('other-links-trigger')?.onClick.listen((_) => openOtherLinks());
   html.document.getElementById('themes-toggle')?.onClick.listen((_) => openThemes());
   html.document.getElementById('freeze-toggle')?.onClick.listen((_) => toggleAnimation());
   
-  html.document.getElementById('export-all-zip-btn')?.onClick.listen((_) => exportAllZip());
   html.document.getElementById('import-save-btn')?.onClick.listen((_) => triggerImportSave());
 
   setupDragAndDrop(1, html.document.getElementById('slot-1')!);
@@ -397,13 +397,6 @@ void downloadSaveZip(Ps2SaveInfo save) {
   triggerDownload('${save.dirName}.zip', bytes);
 }
 
-void exportAllZip() {
-  final card = state.currentCard;
-  if (card == null) return;
-  final bytes = card.exportAllZip();
-  triggerDownload('card_export.zip', bytes);
-}
-
 void triggerDownload(String filename, Uint8List bytes) {
   final blob = html.Blob([bytes]);
   final url = html.Url.createObjectUrlFromBlob(blob);
@@ -419,7 +412,7 @@ void showScreen(String id) {
   html.document.querySelectorAll('.screen').forEach((s) => s.classes.remove('active'));
   html.document.getElementById(id)?.classes.add('active');
   if (id == 'slot-select') {
-    setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, .performance-toggle, .help-btn');
+    setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-${state.currentSlotIndex}');
   } else {
     setFocusScope('.save-card, .back-btn, .create-btn');
   }
@@ -546,7 +539,7 @@ void closeModal() {
   if (html.document.getElementById('browser-grid')?.classes.contains('active') == true) {
     setFocusScope('.save-card, .back-btn, .create-btn');
   } else {
-    setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, .performance-toggle, .help-btn');
+    setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-${state.currentSlotIndex}');
   }
 }
 
@@ -585,11 +578,23 @@ void handleKeyDown(html.KeyboardEvent e) {
   }
 }
 
-void setFocusScope(String selector) {
+void setFocusScope(String selector, {String? priorityId}) {
   Timer(const Duration(milliseconds: 50), () {
-    state.focusScope = html.document.querySelectorAll(selector).toList().cast<html.Element>()
+    final elements = html.document.querySelectorAll(selector).toList().cast<html.Element>()
         .where((el) => el.offsetParent != null).toList();
+    
+    state.focusScope = elements;
     state.focusIndex = 0;
+
+    if (priorityId != null) {
+      for (int i = 0; i < elements.length; i++) {
+        if (elements[i].id == priorityId) {
+          state.focusIndex = i;
+          break;
+        }
+      }
+    }
+    
     updateFocus();
   });
 }
@@ -815,7 +820,7 @@ void setTheme(String theme) {
 
 void toggleAnimation() {
   state.animationPaused = !state.animationPaused;
-  html.document.getElementById('freeze-toggle')!.text = state.animationPaused ? 'Resume' : 'Freeze';
+  html.document.getElementById('freeze-toggle')!.text = state.animationPaused ? 'Animate BG' : 'Freeze';
 }
 
 void openHelp() {
@@ -828,6 +833,29 @@ final helpContent = [
   ('Navigation', 'Use Arrow Keys to move selection, Enter to select, and Esc/Backspace to go back.'),
   ('Copying', 'Load cards into both slots to enable copying saves between them.'),
 ];
+
+final otherLinks = [
+  //('Google', 'https://google.com'),
+  ('Original mymc', 'https://github.com/ps2dev/mymc'),
+  ('PS2 Emulator', 'https://pcsx2.net/')
+];
+
+void openOtherLinks() {
+  showModal(
+    title: 'Other Links',
+    body: 'Useful resources and links:',
+    buttons: null,
+  );
+  
+  final body = html.document.getElementById('modal-body')!;
+  final listHtml = otherLinks.map((link) => 
+    '<div class="modal-btn" onclick="window.open(\'${link.$2}\', \'_blank\')" style="text-align:center; margin-bottom:5px; cursor:pointer;">${link.$1}</div>'
+  ).join('');
+  
+  body.setInnerHtml('<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  
+  setFocusScope('.modal-btn, .nav-hint');
+}
 
 void renderHelp() {
   final content = helpContent[state.helpPage];
