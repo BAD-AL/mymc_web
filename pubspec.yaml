@@ -1,0 +1,20 @@
+name: mymc_web
+description: An absolute bare-bones web app.
+version: 1.0.0
+# repository: https://github.com/my_org/my_repo
+
+environment:
+  sdk: ^3.11.0
+
+# Add regular dependencies here.
+dependencies:
+  web: ^1.1.1
+  archive: ^3.6.1
+  dart_mymc:
+    git:
+      url: https://github.com/BAD-AL/dart_mymc.git
+
+dev_dependencies:
+  build_runner: ^2.4.15
+  build_web_compilers: ^4.1.6
+  lints: ^6.0.0
