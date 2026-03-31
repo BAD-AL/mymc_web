@@ -898,6 +898,7 @@ class HostedCard {
 
 final hostedCards = [
   HostedCard('PS2 Saves (www.maximummemory.com legacy saves)', 32, 'saves/max_memory_ps2_saves.zip'),
+  HostedCard('PS2 Saves (nfl2k5rosters.com legacy saves)', 8, 'saves/nfl2k5rosters_ps2.zip'),
 ];
 
 void openHostedMenu(int slotIndex) {
