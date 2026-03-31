@@ -469,11 +469,11 @@ extension NumberFormatting on int {
 }
 
 void updateSlotIcons() {
-  html.document.getElementById('icon-1')!.setInnerHtml(generateMCSVG(state.currentTheme, '1', 'slot1'), treeSanitizer: html.NodeTreeSanitizer.trusted);
-  html.document.getElementById('icon-2')!.setInnerHtml(generateMCSVG(state.currentTheme, '2', 'slot2'), treeSanitizer: html.NodeTreeSanitizer.trusted);
+  html.document.getElementById('icon-1')!.setInnerHtml(generateMCSVG(state.currentTheme, '1', 'slot1', showLoadHint: state.slot1 == null), treeSanitizer: html.NodeTreeSanitizer.trusted);
+  html.document.getElementById('icon-2')!.setInnerHtml(generateMCSVG(state.currentTheme, '2', 'slot2', showLoadHint: state.slot2 == null), treeSanitizer: html.NodeTreeSanitizer.trusted);
 }
 
-String generateMCSVG(String theme, String label, String gradId) {
+String generateMCSVG(String theme, String label, String gradId, {bool showLoadHint = false}) {
   String stopColor, strokeColor;
   double strokeOpacity;
   
@@ -482,6 +482,14 @@ String generateMCSVG(String theme, String label, String gradId) {
     case 'stealth': stopColor = '#111111'; strokeColor = '#0088ff'; strokeOpacity = 0.3; break;
     case 'holo': stopColor = '#00aaff'; strokeColor = '#ffffff'; strokeOpacity = 0.6; break;
     default: stopColor = 'rgba(0,100,255,0.4)'; strokeColor = '#00aaff'; strokeOpacity = 0.5; break;
+  }
+  
+  String loadHintHtml = '';
+  if (showLoadHint) {
+    loadHintHtml = '''
+      <text x="50" y="66" font-size="6" fill="$strokeColor" text-anchor="middle" opacity="0.8">DRAG or CLICK</text>
+      <text x="50" y="74" font-size="6" fill="$strokeColor" text-anchor="middle" opacity="0.8">TO LOAD</text>
+    ''';
   }
   
   return '''
@@ -496,6 +504,7 @@ String generateMCSVG(String theme, String label, String gradId) {
       <rect x="15" y="10" width="70" height="15" rx="2" fill="rgba(0,0,0,0.5)"/>
       <text x="50" y="21" font-size="7" fill="$strokeColor" text-anchor="middle" opacity="0.8">MEMORY CARD</text>
       <rect x="15" y="50" width="70" height="55" rx="3" fill="rgba(0,0,0,0.3)" stroke="$strokeColor" stroke-opacity="0.3"/>
+      $loadHintHtml
       <text x="50" y="92" font-size="18" fill="$strokeColor" text-anchor="middle">${label.substring(0, 1)}</text>
       <text x="20" y="118" font-size="6" fill="$strokeColor" opacity="0.5">MagicGate</text>
     </svg>
@@ -875,7 +884,7 @@ void openHelp() {
 }
 
 final helpContent = [
-  ('General Usage', 'Welcome to PS2 Card Manager. Click on a slot to load a card from your computer or from our server library. You can also drag and drop .ps2 files directly onto a slot.'),
+  ('General Usage', 'Welcome to PS2 Card Manager, a .ps2 card image save manager for PCSX2 (based on mymc). Click on a slot to load a card from your computer or from our server library. You can also drag and drop .ps2 files directly onto a slot.'),
   ('Navigation', 'Use Arrow Keys to move selection, Enter to select, and Esc/Backspace to go back.'),
   ('Copying', 'Load cards into both slots to enable copying saves between them. You can also drop .max/.psu save files directly into a card view.'),
 ];
@@ -888,7 +897,7 @@ class HostedCard {
 }
 
 final hostedCards = [
-  HostedCard('PS2 Saves (from www.maximummemory.com)', 32, 'saves/max_memory_ps2_saves.zip'),
+  HostedCard('PS2 Saves (www.maximummemory.com legacy saves)', 32, 'saves/max_memory_ps2_saves.zip'),
 ];
 
 void openHostedMenu(int slotIndex) {
