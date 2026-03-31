@@ -38,7 +38,7 @@ void main() {
   setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-1');
   
   html.window.onKeyDown.listen(handleKeyDown);
-  setupGamepadPolling();
+  //setupGamepadPolling();
 }
 
 // --- UI Logic ---
@@ -138,25 +138,27 @@ Future<void> loadFiles(int slotIndex, List<html.File> files) async {
 
   bool isMulti = sortedFiles.length > 1;
   int count = 0;
+  showToast('Importing...', title: '');
   for (final file in sortedFiles) {
     await loadFile(slotIndex, file, silent: isMulti);
     count++;
   }
   
   if (isMulti) {
-    showToast('Processed $count files');
+    showToast('Processed $count files', title: 'Complete');
   }
 }
 
 Future<void> importSaveFiles(List<html.File> files) async {
   bool isMulti = files.length > 1;
   int count = 0;
+  showToast('Importing...', title: '');
   for (final file in files) {
     await importSaveFile(file);
     count++;
   }
   if (isMulti) {
-    showToast('Imported $count saves');
+    showToast('Imported $count saves', title: 'Complete');
   }
 }
 
@@ -422,7 +424,10 @@ void triggerDownload(String filename, Uint8List bytes) {
 // --- UI Helpers ---
 
 void showScreen(String id) {
-  html.document.querySelectorAll('.screen').forEach((s) => s.classes.remove('active'));
+  final screens = html.document.querySelectorAll('.screen');
+  for (int i = 0; i < screens.length; i++) {
+    (screens[i] as html.Element).classes.remove('active');
+  }
   html.document.getElementById(id)?.classes.add('active');
   if (id == 'slot-select') {
     setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-${state.currentSlotIndex}');
@@ -451,9 +456,9 @@ void updateSlotInfo(int n) {
     final percent = (1.0 - (info.freeBytes / info.totalBytes)) * 100;
     fill.style.width = '${percent}%';
     
-    final freeKb = info.freeBytes ~/ 1024;
-    final totalKb = info.totalBytes ~/ 1024;
-    text.text = '${totalKb.toLocaleString()} KB Total / ${freeKb.toLocaleString()} KB Free';
+    final freeMb = info.freeBytes / (1024 * 1024);
+    final totalMb = info.totalBytes / (1024 * 1024);
+    text.text = '${totalMb.toStringAsFixed(2)} MB Total / ${freeMb.toStringAsFixed(2)} MB Free';
   }
 }
 
@@ -557,7 +562,12 @@ void closeModal() {
 }
 
 void showToast(String message, {String title = 'Notification'}) {
-  html.document.getElementById('modal-title')!.text = title;
+  final titleEl = html.document.getElementById('modal-title')!;
+  if (title == 'Notification' || title.isEmpty) {
+    titleEl.text = '';
+  } else {
+    titleEl.text = title;
+  }
   html.document.getElementById('modal-body')!.setInnerHtml('<p style="text-align:center; color:var(--ps2-blue); margin: 20px 0;">$message</p>', treeSanitizer: html.NodeTreeSanitizer.trusted);
   html.document.getElementById('modal-buttons')!.innerHtml = '';
   html.document.getElementById('modal-footer-dynamic')!.innerHtml = '';
@@ -593,8 +603,15 @@ void handleKeyDown(html.KeyboardEvent e) {
 
 void setFocusScope(String selector, {String? priorityId}) {
   Timer(const Duration(milliseconds: 50), () {
-    final elements = html.document.querySelectorAll(selector).toList().cast<html.Element>()
-        .where((el) => el.offsetParent != null).toList();
+    final results = html.document.querySelectorAll(selector);
+    final List<html.Element> elements = [];
+    
+    for (int i = 0; i < results.length; i++) {
+      final node = results[i];
+      if (node is html.Element && node.offsetParent != null) {
+        elements.add(node);
+      }
+    }
     
     state.focusScope = elements;
     state.focusIndex = 0;
@@ -613,7 +630,9 @@ void setFocusScope(String selector, {String? priorityId}) {
 }
 
 void updateFocus() {
-  for (final el in state.focusScope) el.classes.remove('focused');
+  for (int i = 0; i < state.focusScope.length; i++) {
+    state.focusScope[i].classes.remove('focused');
+  }
   if (state.focusIndex < state.focusScope.length) {
     final el = state.focusScope[state.focusIndex];
     el.classes.add('focused');
@@ -622,10 +641,18 @@ void updateFocus() {
 }
 
 void setupGamepadPolling() {
-  Timer.periodic(const Duration(milliseconds: 50), (_) {
-    final gamepads = html.window.navigator.getGamepads();
-    for (final gp in gamepads) {
-      if (gp == null) continue;
+  Timer.periodic(const Duration(milliseconds: 150), (_) {
+    try {
+      final gamepads = html.window.navigator.getGamepads();
+      if (gamepads == null) return;
+      
+      for (int i = 0; i < gamepads.length; i++) {
+        final gp = gamepads[i];
+        if (gp == null) continue;
+        // Gamepad polling logic can be added here
+      }
+    } catch (e) {
+      // Silence periodic errors
     }
   });
 }
@@ -691,9 +718,12 @@ void resize() {
 void animate(num _) {
   if (!state.animationPaused) {
     time += 1;
-    ctx.clearRect(0, 0, bgCanvas.width!, bgCanvas.height!);
-    for (final p in prisms) drawPrism(p, time);
-    for (final b in blocks) {
+    ctx.clearRect(0, 0, bgCanvas.width ?? 0, bgCanvas.height ?? 0);
+    for (int i = 0; i < prisms.length; i++) {
+      drawPrism(prisms[i], time);
+    }
+    for (int i = 0; i < blocks.length; i++) {
+      final b = blocks[i];
       b.z -= b.vSpeed;
       if (b.z < -400) {
         b.z = 2000;
@@ -725,14 +755,16 @@ void drawCube(Cube b) {
     [-1.0, -1.0, 1.0], [1.0, -1.0, 1.0], [1.0, 1.0, 1.0], [-1.0, 1.0, 1.0]
   ];
   
-  final proj = points.map((p) {
+  final List<({double x, double y, double scale})> proj = [];
+  for (int i = 0; i < points.length; i++) {
+    final p = points[i];
     double px = p[0] * b.size, py = p[1] * b.size, pz = p[2] * b.size;
     double x1 = px * math.cos(b.rotY) - pz * math.sin(b.rotY);
     double z1 = px * math.sin(b.rotY) + pz * math.cos(b.rotY);
     double y2 = py * math.cos(b.rotX) - z1 * math.sin(b.rotX);
     double z2 = py * math.sin(b.rotX) + z1 * math.cos(b.rotX);
-    return project(x1 + b.x, y2 + b.y, z2 + b.z);
-  }).toList();
+    proj.add(project(x1 + b.x, y2 + b.y, z2 + b.z));
+  }
   
   const lines = [
     [0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]
@@ -741,7 +773,8 @@ void drawCube(Cube b) {
   ctx.strokeStyle = 'rgba(0, 170, 255, ${0.1 + (1 - b.z / 2000) * 0.4})';
   ctx.lineWidth = 2 * (1 - b.z / 2000);
   ctx.beginPath();
-  for (final line in lines) {
+  for (int i = 0; i < lines.length; i++) {
+    final line = lines[i];
     ctx.moveTo(proj[line[0]].x, proj[line[0]].y);
     ctx.lineTo(proj[line[1]].x, proj[line[1]].y);
   }
@@ -855,7 +888,7 @@ class HostedCard {
 }
 
 final hostedCards = [
-  HostedCard('Sample Saves', 8, 'hosted/sample.zip'),
+  HostedCard('PS2 Saves (from www.maximummemory.com)', 32, 'saves/max_memory_ps2_saves.zip'),
 ];
 
 void openHostedMenu(int slotIndex) {
@@ -873,14 +906,16 @@ void openHostedMenu(int slotIndex) {
   body.setInnerHtml('<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
   
   // Add listeners to the dynamic buttons
-  html.document.querySelectorAll('.hosted-item').forEach((el) {
+  final items = html.document.querySelectorAll('.hosted-item');
+  for (int i = 0; i < items.length; i++) {
+    final el = items[i] as html.Element;
     el.onClick.listen((_) {
       final label = el.getAttribute('data-label')!;
       final size = int.parse(el.getAttribute('data-size')!);
       final url = el.getAttribute('data-url')!;
       loadHostedCard(slotIndex, HostedCard(label, size, url));
     });
-  });
+  }
 
   setFocusScope('.modal-btn, .nav-hint');
 }
@@ -896,7 +931,7 @@ Future<void> loadHostedCard(int slotIndex, HostedCard info) async {
     final bytes = (response.response as ByteBuffer).asUint8List();
     
     // 3. Import ZIP into card
-    card.importSave(bytes, overwrite: true);
+    card.importZip(bytes, overwrite: true);
     
     // 4. Update State
     if (slotIndex == 1) {
@@ -917,13 +952,17 @@ Future<void> loadHostedCard(int slotIndex, HostedCard info) async {
     
   } catch (e) {
     showToast('Failed to load hosted card: $e', title: 'Error');
+    print('Failed to load hosted card: $e' );
   }
 }
 
 final otherLinks = [
   //('Google', 'https://google.com'),
   ('Original mymc', 'https://github.com/ps2dev/mymc'),
-  ('PS2 Emulator', 'https://pcsx2.net/')
+  ('PS2 Emulator', 'https://pcsx2.net/'),
+  ('XBOX Memory Card Manager', 'https://bad-al.github.io/xbmut_web/'),
+  ('NFL2K5 Save Editor', 'https://bad-al.github.io/nfl2k5tool_web/'),
+  
 ];
 
 void openOtherLinks() {
