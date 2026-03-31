@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PS2 Card Manager (mymc_web)</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="main.dart.js"></script>
+</head>
+<body>
+    <header id="main-header">
+        <div class="header-left">
+            <div class="app-logo">
+                <span class="glow-text logo-main">PS2</span>
+                <span class="logo-sub">CARD MANAGER</span>
+            </div>
+        </div>
+        <nav class="header-center">
+            <a href="https://github.com/BAD-AL/dart_mymc" target="_blank" class="header-link">GitHub</a>
+            <a href="https://web.archive.org/web/20050124144746/http://us.codejunkies.com/saves_maxdrive2.asp?rf=0&c=US&cr=USD&cs=$&r=0&l=1&p=1&st=O" target="_blank" class="header-link">CodeJunkies</a>
+            <div id="other-links-trigger" class="header-link" style="cursor: pointer;">Other links</div>
+        </nav>
+        <div class="header-right">
+            <div id="live-clock" class="neon-blue">2026/03/29 12:00:00</div>
+            <div class="help-btn" id="help-trigger">
+                <svg viewBox="0 0 50 50" class="btn-icon"><rect x="5" y="5" width="40" height="40" rx="5" fill="none" stroke="currentColor" stroke-width="4"/><text x="25" y="35" font-family="Arial" font-size="30" fill="currentColor" text-anchor="middle">?</text></svg>
+            </div>
+        </div>
+    </header>
+
+    <div id="ps2-bg">
+        <canvas id="bg-canvas"></canvas>
+    </div>
+
+    <main id="app">
+        <!-- SLOT SELECT SCREEN -->
+        <section id="slot-select" class="screen active">
+            <h1 class="glow-text">Browser</h1>
+            <div class="slots-container">
+                <div class="slot" id="slot-1">
+                    <div class="slot-clickable-area" id="slot-area-1">
+                        <div class="card-icon-container" id="icon-1"></div>
+                        <span class="slot-label">Slot 1</span>
+                        <div class="card-info">
+                            <span class="status-label" id="status-1">No Card</span>
+                            <div class="capacity-bar-container hidden" id="cap-bar-1"><div class="capacity-bar-fill" id="fill-1"></div></div>
+                            <span class="capacity-text hidden" id="cap-text-1"></span>
+                        </div>
+                    </div>
+                    <button class="create-btn" id="create-btn-1">Create New</button>
+                    <button class="create-btn export-btn" id="export-btn-1">Export Card</button>
+                    <!-- Hidden file input for drag and drop / click to load -->
+                    <input type="file" id="file-input-1" style="display: none;" accept=".ps2" multiple>
+                </div>
+                <div class="slot" id="slot-2">
+                    <div class="slot-clickable-area" id="slot-area-2">
+                        <div class="card-icon-container" id="icon-2"></div>
+                        <span class="slot-label">Slot 2</span>
+                        <div class="card-info">
+                            <span class="status-label" id="status-2">No Card</span>
+                            <div class="capacity-bar-container hidden" id="cap-bar-2"><div class="capacity-bar-fill" id="fill-2"></div></div>
+                            <span class="capacity-text hidden" id="cap-text-2"></span>
+                        </div>
+                    </div>
+                    <button class="create-btn" id="create-btn-2">Create New</button>
+                    <button class="create-btn export-btn" id="export-btn-2">Export Card</button>
+                    <input type="file" id="file-input-2" style="display: none;" accept=".ps2" multiple>
+                </div>
+            </div>
+            <!-- Global file input for importing saves -->
+            <input type="file" id="import-save-input" style="display: none;" accept=".max,.psu,.sps,.cbs" multiple>
+        </section>
+
+        <!-- BROWSER GRID SCREEN -->
+        <section id="browser-grid" class="screen">
+            <header class="browser-header">
+                <button class="back-btn" id="browser-back-btn">Back</button>
+                <div class="header-info">
+                    <h2 id="current-slot-title" class="glow-text">Slot 1</h2>
+                </div>
+                <div class="browser-actions">
+                   <button class="create-btn" id="import-save-btn" title="Import a .max or .psu PS2 save file">Import Save</button>
+                </div>
+            </header>
+            <div id="save-list" class="grid-view"></div>
+        </section>
+    </main>
+
+    <div class="toolbar-bottom">
+        <div class="performance-toggle" id="themes-toggle">Themes</div>
+        <div id="freeze-toggle" class="performance-toggle">Animate BG</div>
+    </div>
+
+    <!-- PS2 MODAL DIALOG (Shell) -->
+    <div id="modal-overlay" style="display: none;">
+        <div id="ps2-modal">
+            <div class="modal-content">
+                <h3 id="modal-title"></h3>
+                <div id="modal-body"></div>
+                <div class="modal-actions" id="modal-buttons"></div>
+            </div>
+            <div id="modal-footer-dynamic"></div>
+        </div>
+    </div>
+</body>
+</html>
