@@ -1,8 +1,37 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
-import 'dart:html' as html;
+import 'dart:js_interop';
+import 'package:web/web.dart' as web;
 import 'package:dart_mymc/dart_mymc.dart';
+import 'icon_renderer.dart';
+
+// --- Extension Helpers for Migration ---
+
+extension ElementExtensions on web.Element {
+  void addClass(String className) => classList.add(className);
+  void removeClass(String className) => classList.remove(className);
+  bool hasClass(String className) => classList.contains(className);
+  
+  set innerHtml(String value) {
+    innerHTML = value.toJS;
+  }
+}
+
+extension EventExtensions on web.EventTarget {
+  Stream<web.MouseEvent> get onClick => web.EventStreamProvider<web.MouseEvent>('click').forTarget(this);
+  Stream<web.KeyboardEvent> get onKeyDown => web.EventStreamProvider<web.KeyboardEvent>('keydown').forTarget(this);
+  Stream<web.Event> get onChange => web.EventStreamProvider<web.Event>('change').forTarget(this);
+  Stream<web.DragEvent> get onDragOver => web.EventStreamProvider<web.DragEvent>('dragover').forTarget(this);
+  Stream<web.DragEvent> get onDragLeave => web.EventStreamProvider<web.DragEvent>('dragleave').forTarget(this);
+  Stream<web.DragEvent> get onDrop => web.EventStreamProvider<web.DragEvent>('drop').forTarget(this);
+  Stream<web.MouseEvent> get onMouseEnter => web.EventStreamProvider<web.MouseEvent>('mouseenter').forTarget(this);
+  Stream<web.MouseEvent> get onMouseLeave => web.EventStreamProvider<web.MouseEvent>('mouseleave').forTarget(this);
+}
+
+extension WindowExtensions on web.Window {
+  Stream<web.Event> get onResize => web.EventStreamProvider<web.Event>('resize').forTarget(this);
+}
 
 // --- State Management ---
 
@@ -18,7 +47,11 @@ class AppState {
   
   // Navigation State
   int focusIndex = 0;
-  List<html.Element> focusScope = [];
+  List<web.Element> focusScope = [];
+
+  // Live animation state
+  Timer? rotationTimer;
+  double currentRotation = 25.0;
 
   Ps2Card? get currentCard => currentSlotIndex == 1 ? slot1 : slot2;
   Ps2Card? get otherCard => currentSlotIndex == 1 ? slot2 : slot1;
@@ -37,98 +70,106 @@ void main() {
   
   setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-1');
   
-  html.window.onKeyDown.listen(handleKeyDown);
+  web.window.onKeyDown.listen(handleKeyDown);
   //setupGamepadPolling();
 }
 
 // --- UI Logic ---
 
 void initUI() {
-  html.document.getElementById('slot-area-1')?.onClick.listen((_) => openSlot(1));
-  html.document.getElementById('slot-area-2')?.onClick.listen((_) => openSlot(2));
+  web.document.getElementById('slot-area-1')?.onClick.listen((_) => openSlot(1));
+  web.document.getElementById('slot-area-2')?.onClick.listen((_) => openSlot(2));
   
-  html.document.getElementById('create-btn-1')?.onClick.listen((_) => promptCreateCard(1));
-  html.document.getElementById('create-btn-2')?.onClick.listen((_) => promptCreateCard(2));
+  web.document.getElementById('create-btn-1')?.onClick.listen((_) => promptCreateCard(1));
+  web.document.getElementById('create-btn-2')?.onClick.listen((_) => promptCreateCard(2));
   
   // Export Card
-  html.document.getElementById("export-btn-1")?.onClick.listen((_) => exportCard(1));
-  html.document.getElementById("export-btn-2")?.onClick.listen((_) => exportCard(2));
+  web.document.getElementById("export-btn-1")?.onClick.listen((_) => exportCard(1));
+  web.document.getElementById("export-btn-2")?.onClick.listen((_) => exportCard(2));
   
   setupFileInput(1);
   setupFileInput(2);
   setupImportSaveInput();
 
-  html.document.getElementById('browser-back-btn')?.onClick.listen((_) => showScreen('slot-select'));
-  html.document.getElementById('help-trigger')?.onClick.listen((_) => openHelp());
-  html.document.getElementById('other-links-trigger')?.onClick.listen((_) => openOtherLinks());
-  html.document.getElementById('themes-toggle')?.onClick.listen((_) => openThemes());
-  html.document.getElementById('freeze-toggle')?.onClick.listen((_) => toggleAnimation());
+  web.document.getElementById('browser-back-btn')?.onClick.listen((_) => showScreen('slot-select'));
+  web.document.getElementById('help-trigger')?.onClick.listen((_) => openHelp());
+  web.document.getElementById('other-links-trigger')?.onClick.listen((_) => openOtherLinks());
+  web.document.getElementById('themes-toggle')?.onClick.listen((_) => openThemes());
+  web.document.getElementById('freeze-toggle')?.onClick.listen((_) => toggleAnimation());
   
-  html.document.getElementById('import-save-btn')?.onClick.listen((_) => triggerImportSave());
+  web.document.getElementById('import-save-btn')?.onClick.listen((_) => triggerImportSave());
 
-  setupDragAndDrop(1, html.document.getElementById('slot-1')!);
-  setupDragAndDrop(2, html.document.getElementById('slot-2')!);
+  setupDragAndDrop(1, web.document.getElementById('slot-1')!);
+  setupDragAndDrop(2, web.document.getElementById('slot-2')!);
   setupBrowserDrop();
 
   updateSlotIcons();
 }
 
 void setupBrowserDrop() {
-  final element = html.document.getElementById('browser-grid')!;
+  final element = web.document.getElementById('browser-grid')!;
   element.onDragOver.listen((e) {
     e.preventDefault();
-    element.classes.add('drag-over');
+    element.addClass('drag-over');
   });
-  element.onDragLeave.listen((_) => element.classes.remove('drag-over'));
+  element.onDragLeave.listen((_) => element.removeClass('drag-over'));
   element.onDrop.listen((e) async {
-    e.preventDefault();
-    element.classes.remove('drag-over');
-    final files = e.dataTransfer.files;
-    if (files != null && files.isNotEmpty) {
+    final web.DragEvent de = e as web.DragEvent;
+    de.preventDefault();
+    element.removeClass('drag-over');
+    final dt = de.dataTransfer;
+    final files = dt?.files;
+    if (files != null && files.length > 0) {
       await loadFiles(state.currentSlotIndex, files);
     }
   });
 }
 
 void setupFileInput(int slotIndex) {
-  final input = html.document.getElementById('file-input-$slotIndex') as html.FileUploadInputElement;
+  final input = web.document.getElementById('file-input-$slotIndex') as web.HTMLInputElement;
   input.onChange.listen((event) async {
     final files = input.files;
-    if (files != null && files.isNotEmpty) {
+    if (files != null && files.length > 0) {
       await loadFiles(slotIndex, files);
     }
   });
 }
 
 void setupImportSaveInput() {
-  final input = html.document.getElementById('import-save-input') as html.FileUploadInputElement;
+  final input = web.document.getElementById('import-save-input') as web.HTMLInputElement;
   input.onChange.listen((event) async {
     final files = input.files;
-    if (files != null && files.isNotEmpty) {
+    if (files != null && files.length > 0) {
       await importSaveFiles(files);
     }
   });
 }
 
-void setupDragAndDrop(int slotIndex, html.Element element) {
+void setupDragAndDrop(int slotIndex, web.Element element) {
   element.onDragOver.listen((e) {
     e.preventDefault();
-    element.classes.add('drag-over');
+    element.addClass('drag-over');
   });
-  element.onDragLeave.listen((_) => element.classes.remove('drag-over'));
+  element.onDragLeave.listen((_) => element.removeClass('drag-over'));
   element.onDrop.listen((e) async {
-    e.preventDefault();
-    element.classes.remove('drag-over');
-    final files = e.dataTransfer.files;
-    if (files != null && files.isNotEmpty) {
+    final web.DragEvent de = e as web.DragEvent;
+    de.preventDefault();
+    element.removeClass('drag-over');
+    final dt = de.dataTransfer;
+    final files = dt?.files;
+    if (files != null && files.length > 0) {
       await loadFiles(slotIndex, files);
     }
   });
 }
 
-Future<void> loadFiles(int slotIndex, List<html.File> files) async {
-  final sortedFiles = List<html.File>.from(files);
-  sortedFiles.sort((a, b) {
+Future<void> loadFiles(int slotIndex, web.FileList files) async {
+  final List<web.File> fileList = [];
+  for (int i = 0; i < files.length; i++) {
+    fileList.add(files.item(i)!);
+  }
+  
+  fileList.sort((a, b) {
     final aIsCard = a.name.toLowerCase().endsWith('.ps2');
     final bIsCard = b.name.toLowerCase().endsWith('.ps2');
     if (aIsCard && !bIsCard) return -1;
@@ -136,10 +177,10 @@ Future<void> loadFiles(int slotIndex, List<html.File> files) async {
     return 0;
   });
 
-  bool isMulti = sortedFiles.length > 1;
+  bool isMulti = fileList.length > 1;
   int count = 0;
   showToast('Importing...', title: '');
-  for (final file in sortedFiles) {
+  for (final file in fileList) {
     await loadFile(slotIndex, file, silent: isMulti);
     count++;
   }
@@ -149,12 +190,12 @@ Future<void> loadFiles(int slotIndex, List<html.File> files) async {
   }
 }
 
-Future<void> importSaveFiles(List<html.File> files) async {
+Future<void> importSaveFiles(web.FileList files) async {
   bool isMulti = files.length > 1;
   int count = 0;
   showToast('Importing...', title: '');
-  for (final file in files) {
-    await importSaveFile(file);
+  for (int i = 0; i < files.length; i++) {
+    await importSaveFile(files.item(i)!);
     count++;
   }
   if (isMulti) {
@@ -162,12 +203,11 @@ Future<void> importSaveFiles(List<html.File> files) async {
   }
 }
 
-Future<void> loadFile(int slotIndex, html.File file, {bool silent = false}) async {
+Future<void> loadFile(int slotIndex, web.File file, {bool silent = false}) async {
   final name = file.name.toLowerCase();
-  final reader = html.FileReader();
-  reader.readAsArrayBuffer(file);
-  await reader.onLoadEnd.first;
-  final bytes = reader.result as Uint8List;
+  
+  final arrayBuffer = await file.arrayBuffer().toDart;
+  final bytes = arrayBuffer.toDart.asUint8List();
 
   if (name.endsWith('.ps2')) {
     try {
@@ -182,7 +222,7 @@ Future<void> loadFile(int slotIndex, html.File file, {bool silent = false}) asyn
       updateSlotInfo(slotIndex);
       updateSlotIcons();
       // Refresh browser if active
-      if (html.document.getElementById('browser-grid')?.classes.contains('active') == true && state.currentSlotIndex == slotIndex) {
+      if (web.document.getElementById('browser-grid')?.hasClass('active') == true && state.currentSlotIndex == slotIndex) {
         openSlot(slotIndex);
       }
     } catch (e) {
@@ -197,7 +237,7 @@ Future<void> loadFile(int slotIndex, html.File file, {bool silent = false}) asyn
     try {
       targetCard.importSave(bytes, overwrite: true);
       updateSlotInfo(slotIndex);
-      if (html.document.getElementById('browser-grid')?.classes.contains('active') == true && state.currentSlotIndex == slotIndex) {
+      if (web.document.getElementById('browser-grid')?.hasClass('active') == true && state.currentSlotIndex == slotIndex) {
         openSlot(slotIndex);
       }
       if (!silent) showToast('Imported ${file.name}');
@@ -207,14 +247,12 @@ Future<void> loadFile(int slotIndex, html.File file, {bool silent = false}) asyn
   }
 }
 
-Future<void> importSaveFile(html.File file) async {
+Future<void> importSaveFile(web.File file) async {
   final card = state.currentCard;
   if (card == null) return;
   
-  final reader = html.FileReader();
-  reader.readAsArrayBuffer(file);
-  await reader.onLoadEnd.first;
-  final bytes = reader.result as Uint8List;
+  final arrayBuffer = await file.arrayBuffer().toDart;
+  final bytes = arrayBuffer.toDart.asUint8List();
   
   try {
     card.importSave(bytes, overwrite: true);
@@ -227,7 +265,7 @@ Future<void> importSaveFile(html.File file) async {
 }
 
 void triggerImportSave() {
-  html.document.getElementById('import-save-input')?.click();
+  (web.document.getElementById('import-save-input') as web.HTMLInputElement?)?.click();
 }
 
 void openSlot(int n) {
@@ -239,7 +277,7 @@ void openSlot(int n) {
       buttons: [
         ModalButton('Load from Computer', () {
           closeModal();
-          html.document.getElementById('file-input-$n')?.click();
+          (web.document.getElementById('file-input-$n') as web.HTMLInputElement?)?.click();
         }),
         ModalButton('Load from Server', () {
           openHostedMenu(n);
@@ -251,34 +289,67 @@ void openSlot(int n) {
   }
   
   state.currentSlotIndex = n;
-  html.document.getElementById('current-slot-title')?.text = 'Slot $n';
+  final titleEl = web.document.getElementById('current-slot-title');
+  if (titleEl != null) titleEl.textContent = 'Slot $n';
   
   renderSaveList(card);
   showScreen('browser-grid');
 }
 
 void renderSaveList(Ps2Card card) {
-  final list = html.document.getElementById('save-list')!;
-  list.innerHtml = '';
+  final list = web.document.getElementById('save-list')!;
+  list.innerHTML = ''.toJS;
+  state.rotationTimer?.cancel();
   
   final saves = card.listSaves();
   saves.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
   
   if (saves.isEmpty) {
-    list.setInnerHtml('<div style="grid-column:1/-1;text-align:center;color:#888;margin-top:50px;">Empty</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+    list.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#888;margin-top:50px;">Empty</div>'.toJS;
   } else {
     for (int i = 0; i < saves.length; i++) {
       final save = saves[i];
-      final div = html.DivElement();
+      final div = web.document.createElement('div') as web.HTMLDivElement;
       div.className = 'save-card';
       div.onClick.listen((_) => openSaveMenu(save));
       
-      div.setInnerHtml('''
-        ${generateMCSVG(state.currentTheme, save.title.isNotEmpty ? save.title.substring(0, 1) : '?', 'grad-save-$i')}
+      final iconContainerId = 'icon-container-$i';
+      
+      div.innerHTML = '''
+        <div class="save-icon-3d-container" id="$iconContainerId" style="width:120px; height:120px; display:flex; justify-content:center; align-items:center;">
+          ${save.iconData == null ? generateMCSVG(state.currentTheme, save.title.isNotEmpty ? save.title.substring(0, 1) : '?', 'grad-save-$i') : ''}
+        </div>
         <div class="save-title">${save.title}</div>
         <div class="save-dir">${save.dirName}</div>
-      ''', treeSanitizer: html.NodeTreeSanitizer.trusted);
-      list.append(div);
+      '''.toJS;
+      list.appendChild(div);
+
+      if (save.iconData != null) {
+        final container = web.document.getElementById(iconContainerId)!;
+        final canvas = web.document.createElement('canvas') as web.HTMLCanvasElement;
+        canvas.width = 120;
+        canvas.height = 120;
+        container.appendChild(canvas);
+        
+        // Initial Snapshot
+        Ps2IconRenderer.renderToCanvas(canvas, save.iconData!);
+
+        // Hover Animation
+        div.onMouseEnter.listen((_) {
+          state.rotationTimer?.cancel();
+          state.currentRotation = 0.0; // Starts from the new renderer default (front-facing)
+          state.rotationTimer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
+            state.currentRotation += 2.0; // Spin speed
+            Ps2IconRenderer.renderToCanvas(canvas, save.iconData!, rotationAngle: state.currentRotation);
+          });
+        });
+
+        div.onMouseLeave.listen((_) {
+          state.rotationTimer?.cancel();
+          // Reset to original snapshot angle
+          Ps2IconRenderer.renderToCanvas(canvas, save.iconData!);
+        });
+      }
     }
   }
 }
@@ -413,22 +484,23 @@ void downloadSaveZip(Ps2SaveInfo save) {
 }
 
 void triggerDownload(String filename, Uint8List bytes) {
-  final blob = html.Blob([bytes]);
-  final url = html.Url.createObjectUrlFromBlob(blob);
-  final a = html.AnchorElement(href: url);
+  final blob = web.Blob([bytes.toJS].toJS);
+  final url = web.URL.createObjectURL(blob);
+  final a = web.document.createElement('a') as web.HTMLAnchorElement;
+  a.href = url;
   a.download = filename;
   a.click();
-  html.Url.revokeObjectUrl(url);
+  web.URL.revokeObjectURL(url);
 }
 
 // --- UI Helpers ---
 
 void showScreen(String id) {
-  final screens = html.document.querySelectorAll('.screen');
+  final screens = web.document.querySelectorAll('.screen');
   for (int i = 0; i < screens.length; i++) {
-    (screens[i] as html.Element).classes.remove('active');
+    (screens.item(i) as web.HTMLElement).removeClass('active');
   }
-  html.document.getElementById(id)?.classes.add('active');
+  web.document.getElementById(id)?.addClass('active');
   if (id == 'slot-select') {
     setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-${state.currentSlotIndex}');
   } else {
@@ -438,27 +510,27 @@ void showScreen(String id) {
 
 void updateSlotInfo(int n) {
   final card = (n == 1 ? state.slot1 : state.slot2);
-  final status = html.document.getElementById('status-$n')!;
-  final bar = html.document.getElementById('cap-bar-$n')!;
-  final fill = html.document.getElementById('fill-$n')!;
-  final text = html.document.getElementById('cap-text-$n')!;
+  final status = web.document.getElementById('status-$n')!;
+  final bar = web.document.getElementById('cap-bar-$n')!;
+  final fill = web.document.getElementById('fill-$n') as web.HTMLElement;
+  final text = web.document.getElementById('cap-text-$n')!;
   
   if (card == null) {
-    status.text = 'No Card';
-    bar.classes.add('hidden');
-    text.classes.add('hidden');
+    status.textContent = 'No Card';
+    bar.addClass('hidden');
+    text.addClass('hidden');
   } else {
     final info = card.info;
-    status.text = 'Ready';
-    bar.classes.remove('hidden');
-    text.classes.remove('hidden');
+    status.textContent = 'Ready';
+    bar.removeClass('hidden');
+    text.removeClass('hidden');
     
     final percent = (1.0 - (info.freeBytes / info.totalBytes)) * 100;
     fill.style.width = '${percent}%';
     
     final freeMb = info.freeBytes / (1024 * 1024);
     final totalMb = info.totalBytes / (1024 * 1024);
-    text.text = '${totalMb.toStringAsFixed(2)} MB Total / ${freeMb.toStringAsFixed(2)} MB Free';
+    text.textContent = '${totalMb.toStringAsFixed(2)} MB Total / ${freeMb.toStringAsFixed(2)} MB Free';
   }
 }
 
@@ -469,8 +541,8 @@ extension NumberFormatting on int {
 }
 
 void updateSlotIcons() {
-  html.document.getElementById('icon-1')!.setInnerHtml(generateMCSVG(state.currentTheme, '1', 'slot1', showLoadHint: state.slot1 == null), treeSanitizer: html.NodeTreeSanitizer.trusted);
-  html.document.getElementById('icon-2')!.setInnerHtml(generateMCSVG(state.currentTheme, '2', 'slot2', showLoadHint: state.slot2 == null), treeSanitizer: html.NodeTreeSanitizer.trusted);
+  web.document.getElementById('icon-1')!.innerHTML = generateMCSVG(state.currentTheme, '1', 'slot1', showLoadHint: state.slot1 == null).toJS;
+  web.document.getElementById('icon-2')!.innerHTML = generateMCSVG(state.currentTheme, '2', 'slot2', showLoadHint: state.slot2 == null).toJS;
 }
 
 String generateMCSVG(String theme, String label, String gradId, {bool showLoadHint = false}) {
@@ -523,15 +595,15 @@ class ModalButton {
 }
 
 void showModal({required String title, required String body, List<ModalButton>? buttons}) {
-  html.document.getElementById('modal-title')!.text = title;
-  html.document.getElementById('modal-body')!.setInnerHtml('<p style="text-align:center; color:#ccc; margin: 20px 0;">$body</p>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  web.document.getElementById('modal-title')!.textContent = title;
+  web.document.getElementById('modal-body')!.innerHTML = '<p style="text-align:center; color:#ccc; margin: 20px 0;">$body</p>'.toJS;
   
-  final btnContainer = html.document.getElementById('modal-buttons')!;
-  btnContainer.innerHtml = '';
+  final btnContainer = web.document.getElementById('modal-buttons')!;
+  btnContainer.innerHTML = ''.toJS;
   
   if (buttons != null) {
     for (final btn in buttons) {
-      final b = html.ButtonElement();
+      final b = web.document.createElement('button') as web.HTMLButtonElement;
       b.className = 'modal-btn';
       if (btn.isDanger) b.style.color = '#ff4444';
       if (btn.disabled) {
@@ -541,29 +613,29 @@ void showModal({required String title, required String body, List<ModalButton>? 
       } else {
         b.onClick.listen((_) => btn.action());
       }
-      b.text = btn.label;
-      btnContainer.append(b);
+      b.textContent = btn.label;
+      btnContainer.appendChild(b);
     }
   }
   
-  html.document.getElementById('modal-footer-dynamic')!.setInnerHtml('''
+  web.document.getElementById('modal-footer-dynamic')!.innerHTML = '''
     <div class="modal-footer">
       <div class="nav-hint" id="modal-back-hint">
         <svg class="btn-icon-small" viewBox="0 0 50 50"><circle cx="25" cy="25" r="20" fill="none" stroke="#ff4444" stroke-width="6"/></svg>
         <span>Back</span>
       </div>
     </div>
-  ''', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  '''.toJS;
   
-  html.document.getElementById('modal-back-hint')?.onClick.listen((_) => closeModal());
-  html.document.getElementById('modal-overlay')!.style.display = 'flex';
+  web.document.getElementById('modal-back-hint')?.onClick.listen((_) => closeModal());
+  (web.document.getElementById('modal-overlay') as web.HTMLElement).style.display = 'flex';
   
   setFocusScope('.modal-btn, .sample-item, .nav-hint');
 }
 
 void closeModal() {
-  html.document.getElementById('modal-overlay')!.style.display = 'none';
-  if (html.document.getElementById('browser-grid')?.classes.contains('active') == true) {
+  (web.document.getElementById('modal-overlay') as web.HTMLElement).style.display = 'none';
+  if (web.document.getElementById('browser-grid')?.hasClass('active') == true) {
     setFocusScope('.save-card, .back-btn, .create-btn');
   } else {
     setFocusScope('.slot-clickable-area, .create-btn, .export-btn, .header-link, #other-links-trigger, .performance-toggle, .help-btn', priorityId: 'slot-area-${state.currentSlotIndex}');
@@ -571,22 +643,22 @@ void closeModal() {
 }
 
 void showToast(String message, {String title = 'Notification'}) {
-  final titleEl = html.document.getElementById('modal-title')!;
+  final titleEl = web.document.getElementById('modal-title')!;
   if (title == 'Notification' || title.isEmpty) {
-    titleEl.text = '';
+    titleEl.textContent = '';
   } else {
-    titleEl.text = title;
+    titleEl.textContent = title;
   }
-  html.document.getElementById('modal-body')!.setInnerHtml('<p style="text-align:center; color:var(--ps2-blue); margin: 20px 0;">$message</p>', treeSanitizer: html.NodeTreeSanitizer.trusted);
-  html.document.getElementById('modal-buttons')!.innerHtml = '';
-  html.document.getElementById('modal-footer-dynamic')!.innerHtml = '';
-  html.document.getElementById('modal-overlay')!.style.display = 'flex';
+  web.document.getElementById('modal-body')!.innerHTML = '<p style="text-align:center; color:var(--ps2-blue); margin: 20px 0;">$message</p>'.toJS;
+  web.document.getElementById('modal-buttons')!.innerHTML = ''.toJS;
+  web.document.getElementById('modal-footer-dynamic')!.innerHTML = ''.toJS;
+  (web.document.getElementById('modal-overlay') as web.HTMLElement).style.display = 'flex';
   Timer(const Duration(milliseconds: 1500), closeModal);
 }
 
 // --- Navigation & Accessibility ---
 
-void handleKeyDown(html.KeyboardEvent e) {
+void handleKeyDown(web.KeyboardEvent e) {
   if (e.key == 'ArrowRight' || e.key == 'ArrowDown') {
     if (state.focusScope.isNotEmpty) {
       state.focusIndex = (state.focusIndex + 1) % state.focusScope.length;
@@ -599,12 +671,12 @@ void handleKeyDown(html.KeyboardEvent e) {
     }
   } else if (e.key == 'Enter') {
     if (state.focusScope.isNotEmpty) {
-      state.focusScope[state.focusIndex].click();
+      (state.focusScope[state.focusIndex] as web.HTMLElement).click();
     }
   } else if (e.key == 'Escape' || e.key == 'Backspace') {
-    if (html.document.getElementById('modal-overlay')!.style.display == 'flex') {
+    if ((web.document.getElementById('modal-overlay') as web.HTMLElement).style.display == 'flex') {
       closeModal();
-    } else if (html.document.getElementById('browser-grid')?.classes.contains('active') == true) {
+    } else if (web.document.getElementById('browser-grid')?.hasClass('active') == true) {
       showScreen('slot-select');
     }
   }
@@ -612,12 +684,12 @@ void handleKeyDown(html.KeyboardEvent e) {
 
 void setFocusScope(String selector, {String? priorityId}) {
   Timer(const Duration(milliseconds: 50), () {
-    final results = html.document.querySelectorAll(selector);
-    final List<html.Element> elements = [];
+    final results = web.document.querySelectorAll(selector);
+    final List<web.Element> elements = [];
     
     for (int i = 0; i < results.length; i++) {
-      final node = results[i];
-      if (node is html.Element && node.offsetParent != null) {
+      final node = results.item(i);
+      if (node != null && (node as web.HTMLElement).offsetParent != null) {
         elements.add(node);
       }
     }
@@ -640,36 +712,19 @@ void setFocusScope(String selector, {String? priorityId}) {
 
 void updateFocus() {
   for (int i = 0; i < state.focusScope.length; i++) {
-    state.focusScope[i].classes.remove('focused');
+    state.focusScope[i].removeClass('focused');
   }
   if (state.focusIndex < state.focusScope.length) {
-    final el = state.focusScope[state.focusIndex];
-    el.classes.add('focused');
-    el.scrollIntoView(html.ScrollAlignment.CENTER);
+    final el = state.focusScope[state.focusIndex] as web.HTMLElement;
+    el.addClass('focused');
+    el.scrollIntoView(web.ScrollIntoViewOptions(block: 'center', inline: 'center'));
   }
-}
-
-void setupGamepadPolling() {
-  Timer.periodic(const Duration(milliseconds: 150), (_) {
-    try {
-      final gamepads = html.window.navigator.getGamepads();
-      if (gamepads == null) return;
-      
-      for (int i = 0; i < gamepads.length; i++) {
-        final gp = gamepads[i];
-        if (gp == null) continue;
-        // Gamepad polling logic can be added here
-      }
-    } catch (e) {
-      // Silence periodic errors
-    }
-  });
 }
 
 // --- Background System ---
 
-late html.CanvasElement bgCanvas;
-late html.CanvasRenderingContext2D ctx;
+late web.HTMLCanvasElement bgCanvas;
+late web.CanvasRenderingContext2D ctx;
 double time = 0;
 List<Cube> blocks = [];
 List<Prism> prisms = [];
@@ -685,12 +740,12 @@ class Prism {
 }
 
 void initBackground() {
-  final canvas = html.document.getElementById('bg-canvas');
+  final canvas = web.document.getElementById('bg-canvas');
   if (canvas == null) return;
-  bgCanvas = canvas as html.CanvasElement;
-  ctx = bgCanvas.getContext('2d') as html.CanvasRenderingContext2D;
+  bgCanvas = canvas as web.HTMLCanvasElement;
+  ctx = bgCanvas.getContext('2d') as web.CanvasRenderingContext2D;
   resize();
-  html.window.onResize.listen((_) => resize());
+  web.window.onResize.listen((_) => resize());
   
   final rand = math.Random();
   for (int i = 0; i < 12; i++) {
@@ -716,18 +771,18 @@ void initBackground() {
     ));
   }
   
-  html.window.requestAnimationFrame(animate);
+  web.window.requestAnimationFrame(animate.toJS);
 }
 
 void resize() {
-  bgCanvas.width = html.window.innerWidth ?? 800;
-  bgCanvas.height = html.window.innerHeight ?? 600;
+  bgCanvas.width = web.window.innerWidth;
+  bgCanvas.height = web.window.innerHeight;
 }
 
-void animate(num _) {
+void animate(double _) {
   if (!state.animationPaused) {
     time += 1;
-    ctx.clearRect(0, 0, bgCanvas.width ?? 0, bgCanvas.height ?? 0);
+    ctx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
     for (int i = 0; i < prisms.length; i++) {
       drawPrism(prisms[i], time);
     }
@@ -745,15 +800,15 @@ void animate(num _) {
       drawCube(b);
     }
   }
-  html.window.requestAnimationFrame(animate);
+  web.window.requestAnimationFrame(animate.toJS);
 }
 
 ({double x, double y, double scale}) project(double x, double y, double z) {
   const fov = 600.0;
   final scale = fov / (fov + z);
   return (
-    x: x * scale + (bgCanvas.width ?? 0) / 2,
-    y: y * scale + (bgCanvas.height ?? 0) / 2,
+    x: x * scale + bgCanvas.width / 2,
+    y: y * scale + bgCanvas.height / 2,
     scale: scale,
   );
 }
@@ -779,7 +834,7 @@ void drawCube(Cube b) {
     [0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]
   ];
   
-  ctx.strokeStyle = 'rgba(0, 170, 255, ${0.1 + (1 - b.z / 2000) * 0.4})';
+  ctx.strokeStyle = 'rgba(0, 170, 255, ${0.1 + (1 - b.z / 2000) * 0.4})'.toJS;
   ctx.lineWidth = 2 * (1 - b.z / 2000);
   ctx.beginPath();
   for (int i = 0; i < lines.length; i++) {
@@ -833,11 +888,11 @@ void drawPrism(Prism p, double time) {
 // --- Extras ---
 
 void updateClock() {
-  final clock = html.document.getElementById('live-clock');
+  final clock = web.document.getElementById('live-clock');
   if (clock == null) return;
   final n = DateTime.now();
   final pad = (int v) => v.toString().padLeft(2, '0');
-  clock.text = '${n.year}/${pad(n.month)}/${pad(n.day)} ${pad(n.hour)}:${pad(n.minute)}:${pad(n.second)}';
+  clock.textContent = '${n.year}/${pad(n.month)}/${pad(n.day)} ${pad(n.hour)}:${pad(n.minute)}:${pad(n.second)}';
 }
 
 void openThemes() {
@@ -847,19 +902,19 @@ void openThemes() {
     buttons: null,
   );
   
-  html.document.getElementById('modal-body')!.setInnerHtml('''
+  web.document.getElementById('modal-body')!.innerHTML = '''
     <div class="icon-sample-grid">
       <div class="sample-item" id="theme-classic">${generateMCSVG('classic', 'C', 'theme-c')}<span>Translucent</span></div>
       <div class="sample-item" id="theme-cyber">${generateMCSVG('cyber', 'M', 'theme-m')}<span>Matte</span></div>
       <div class="sample-item" id="theme-stealth">${generateMCSVG('stealth', 'S', 'theme-s')}<span>Stealth</span></div>
       <div class="sample-item" id="theme-holo">${generateMCSVG('holo', 'H', 'theme-h')}<span>Holo</span></div>
     </div>
-  ''', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  '''.toJS;
   
-  html.document.getElementById('theme-classic')?.onClick.listen((_) => setTheme('classic'));
-  html.document.getElementById('theme-cyber')?.onClick.listen((_) => setTheme('cyber'));
-  html.document.getElementById('theme-stealth')?.onClick.listen((_) => setTheme('stealth'));
-  html.document.getElementById('theme-holo')?.onClick.listen((_) => setTheme('holo'));
+  web.document.getElementById('theme-classic')?.onClick.listen((_) => setTheme('classic'));
+  web.document.getElementById('theme-cyber')?.onClick.listen((_) => setTheme('cyber'));
+  web.document.getElementById('theme-stealth')?.onClick.listen((_) => setTheme('stealth'));
+  web.document.getElementById('theme-holo')?.onClick.listen((_) => setTheme('holo'));
   
   setFocusScope('.sample-item, .nav-hint');
 }
@@ -867,7 +922,7 @@ void openThemes() {
 void setTheme(String theme) {
   state.currentTheme = theme;
   updateSlotIcons();
-  if (html.document.getElementById('browser-grid')?.classes.contains('active') == true) {
+  if (web.document.getElementById('browser-grid')?.hasClass('active') == true) {
     openSlot(state.currentSlotIndex);
   }
   showToast('Applied Theme');
@@ -875,7 +930,8 @@ void setTheme(String theme) {
 
 void toggleAnimation() {
   state.animationPaused = !state.animationPaused;
-  html.document.getElementById('freeze-toggle')!.text = state.animationPaused ? 'Animate BG' : 'Freeze';
+  final btn = web.document.getElementById('freeze-toggle');
+  if (btn != null) btn.textContent = state.animationPaused ? 'Animate BG' : 'Freeze';
 }
 
 void openHelp() {
@@ -899,6 +955,7 @@ class HostedCard {
 final hostedCards = [
   HostedCard('PS2 Saves (www.maximummemory.com legacy saves)', 32, 'saves/max_memory_ps2_saves.zip'),
   HostedCard('PS2 Saves (nfl2k5rosters.com legacy saves)', 8, 'saves/nfl2k5rosters_ps2.zip'),
+  //HostedCard('Modern NFL2K4, NFL2K5 Saves', 8, 'saves/espn_2k4_2k5_modern.zip'),
 ];
 
 void openHostedMenu(int slotIndex) {
@@ -908,17 +965,17 @@ void openHostedMenu(int slotIndex) {
     buttons: null,
   );
   
-  final body = html.document.getElementById('modal-body')!;
+  final body = web.document.getElementById('modal-body')!;
   final listHtml = hostedCards.map((card) => 
     '<div class="modal-btn hosted-item" style="text-align:center; margin-bottom:5px; cursor:pointer;" data-url="${card.url}" data-size="${card.sizeMb}" data-label="${card.label}">${card.label} (${card.sizeMb}MB)</div>'
   ).join('');
   
-  body.setInnerHtml('<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  body.innerHTML = '<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>'.toJS;
   
   // Add listeners to the dynamic buttons
-  final items = html.document.querySelectorAll('.hosted-item');
+  final items = web.document.querySelectorAll('.hosted-item');
   for (int i = 0; i < items.length; i++) {
-    final el = items[i] as html.Element;
+    final el = items.item(i) as web.HTMLElement;
     el.onClick.listen((_) {
       final label = el.getAttribute('data-label')!;
       final size = int.parse(el.getAttribute('data-size')!);
@@ -937,8 +994,19 @@ Future<void> loadHostedCard(int slotIndex, HostedCard info) async {
     final card = Ps2Card.format(sizeMb: info.sizeMb);
     
     // 2. Fetch Zip bytes
-    final response = await html.HttpRequest.request(info.url, responseType: 'arraybuffer');
-    final bytes = (response.response as ByteBuffer).asUint8List();
+    final xhr = web.XMLHttpRequest();
+    xhr.open('GET', info.url);
+    xhr.responseType = 'arraybuffer';
+    final completer = Completer<Uint8List>();
+    xhr.onload = (web.Event e) {
+      completer.complete((xhr.response as JSArrayBuffer).toDart.asUint8List());
+    }.toJS;
+    xhr.onerror = (web.Event e) {
+      completer.completeError('XHR Error');
+    }.toJS;
+    xhr.send();
+    
+    final bytes = await completer.future;
     
     // 3. Import ZIP into card
     card.importZip(bytes, overwrite: true);
@@ -969,9 +1037,11 @@ Future<void> loadHostedCard(int slotIndex, HostedCard info) async {
 final otherLinks = [
   //('Google', 'https://google.com'),
   ('Original mymc', 'https://github.com/ps2dev/mymc'),
+  ('Game Faqs saves', 'https://gamefaqs.gamespot.com/ps2/561107-ratchet-and-clank/saves'),
   ('PS2 Emulator', 'https://pcsx2.net/'),
   ('XBOX Memory Card Manager', 'https://bad-al.github.io/xbmut_web/'),
   ('NFL2K5 Save Editor', 'https://bad-al.github.io/nfl2k5tool_web/'),
+  ('NFL2K4 Save Editor', 'https://bad-al.github.io/nfl2k4tool_web/'),
   
 ];
 
@@ -982,12 +1052,12 @@ void openOtherLinks() {
     buttons: null,
   );
   
-  final body = html.document.getElementById('modal-body')!;
+  final body = web.document.getElementById('modal-body')!;
   final listHtml = otherLinks.map((link) => 
     '<div class="modal-btn" onclick="window.open(\'${link.$2}\', \'_blank\')" style="text-align:center; margin-bottom:5px; cursor:pointer;">${link.$1}</div>'
   ).join('');
   
-  body.setInnerHtml('<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>', treeSanitizer: html.NodeTreeSanitizer.trusted);
+  body.innerHTML = '<div style="display:flex; flex-direction:column; gap:10px; padding:10px;">$listHtml</div>'.toJS;
   
   setFocusScope('.modal-btn, .nav-hint');
 }

@@ -10,6 +10,7 @@ environment:
 dependencies:
   web: ^1.1.1
   archive: ^3.6.1
+  vector_math: ^2.1.4
   dart_mymc:
     git:
       url: https://github.com/BAD-AL/dart_mymc.git

@@ -166,7 +166,7 @@ packages:
     description:
       path: "."
       ref: HEAD
-      resolved-ref: e5d16974ef2de393f7795fe64267e70163a001f0
+      resolved-ref: "3f464fcab3ea27818f1224978d6c78ee34db1493"
       url: "https://github.com/BAD-AL/dart_mymc.git"
     source: git
     version: "1.0.0"
@@ -434,6 +434,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.5.3"
+  vector_math:
+    dependency: "direct main"
+    description:
+      name: vector_math
+      sha256: "47a1b32ee755c3fcffa33db52a7258c137f97bdb2209a1075be847809fac4ccf"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.0"
   watcher:
     dependency: transitive
     description:

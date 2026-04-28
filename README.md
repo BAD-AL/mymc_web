@@ -36,7 +36,7 @@ This project is built using **Dart** and the **dart_mymc** library. It is design
 ### Tech Stack
 - **Language**: Dart
 - **Library**: [dart_mymc](https://github.com/BAD-AL/dart_mymc) (Git dependency)
-- **Frontend**: Vanilla HTML5, CSS3, and `dart:html`.
+- **Frontend**: Vanilla HTML5, CSS3, and `package:web`.
 - **Icons/Fonts**: Custom SVG generation and `EmotionEngine` TTF font.
 
 The Dart language was chosen for it's ability to compile to native, wasm, JavaScript and it's modern feel.
@@ -50,18 +50,15 @@ The Dart language was chosen for it's ability to compile to native, wasm, JavaSc
 3. **Run (Development)**:
    ```bash
    webdev serve
+   
+   or to debug with chrome:
+   webdev serve --debug 
    ```
 4. **Build (Production)**:
    ```bash
    webdev build
    ```
 
-### Project Structure
-- `web/`: Contains the source Dart code (`main.dart`), styles, and assets.
-- `dart_mymc/`: Local reference/documentation for the core logic library.
-- `proto/`: Original JavaScript prototype for UI reference.
-
-### Design Decisions
-- **Portability**: The app uses `MemoryCardIo` from `dart_mymc` to handle all operations in-memory, making it compatible with all modern browsers without requiring filesystem access.
-
-- **Security**: The app is strictly client-side and volatile; no data is uploaded to a server.
+#### Special Thanks to
+1. Ross Ridge for mymc (python)
+2. caol64 for the Icon rendering logic [ps2mc-browser](https://github.com/caol64/ps2mc-browser)
